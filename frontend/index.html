@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAMPC - Touchpad Remoto</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <p id="status" class="status disconnected">Conectando...</p>
+
+        <main class="remote-layout">
+            <section class="actions-column" aria-label="Botones de acción">
+                <button id="btn-l2" class="action-btn">L2</button>
+                <button id="btn-l1" class="action-btn">L1</button>
+            </section>
+
+            <section class="touchpad-column">
+                <div id="touchpad" class="touchpad" role="application" aria-label="Touchpad remoto">
+                    <span id="mode-indicator" class="mode-indicator">CURSOR</span>
+                </div>
+            </section>
+        </main>
+
+        <section class="bottom-controls" aria-label="Clicks y modo">
+            <button id="btn-left-click" class="control-btn">click izq</button>
+            <button id="btn-mode-toggle" class="control-btn mode-btn" title="Cambiar entre modo cursor y scroll">🖱️</button>
+            <button id="btn-right-click" class="control-btn">click der</button>
+        </section>
+
+        <section class="text-controls" aria-label="Escritura remota">
+            <input id="text-input" class="text-input" type="text" placeholder="cuadro de texto" maxlength="220" autocomplete="off">
+            <div class="text-actions">
+                <button id="btn-clear-text" class="text-btn">limpiar</button>
+                <button id="btn-send-text" class="text-btn text-btn-send">enviar</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="script.js?v=4"></script>
+</body>
+</html>
