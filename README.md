@@ -4,7 +4,7 @@ Control el cursor de tu PC Linux desde un celular usando un touchpad virtual en 
 
 ## 📋 Requisitos
 
-- **PC Principal (Servidor)**: Linux con Python 3.7+
+- **PC Principal (Servidor)**: Linux con Python 3.7+ escritorio con wayland
 - **Celular/Dispositivo (Cliente)**: Navegador web moderno
 - **Red**: Ambos dispositivos en la misma red local o accesible por IP (puerto 1024)
 
