@@ -226,13 +226,23 @@ function handleTouchCancel() {
 
 // Touch real
 touchpad.addEventListener('touchstart', (e) => {
+    e.stopPropagation();
     isTouchDevice = true;
     handleTouchStart(e);
 }, { passive: false });
 
-touchpad.addEventListener('touchmove', handleTouchMove, { passive: false });
-touchpad.addEventListener('touchend', handleTouchEnd, { passive: false });
-touchpad.addEventListener('touchcancel', handleTouchCancel, { passive: false });
+touchpad.addEventListener('touchmove', (e) => {
+    e.stopPropagation();
+    handleTouchMove(e);
+}, { passive: false });
+touchpad.addEventListener('touchend', (e) => {
+    e.stopPropagation();
+    handleTouchEnd(e);
+}, { passive: false });
+touchpad.addEventListener('touchcancel', (e) => {
+    e.stopPropagation();
+    handleTouchCancel(e);
+}, { passive: false });
 
 // Fallback mouse en PC
 touchpad.addEventListener('mousedown', (e) => {
