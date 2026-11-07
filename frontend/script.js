@@ -11,6 +11,7 @@ const btnL2 = document.getElementById('btn-l2');
 const textInputEl = document.getElementById('text-input');
 const btnSendText = document.getElementById('btn-send-text');
 const btnClearText = document.getElementById('btn-clear-text');
+const btnFullscreen = document.getElementById('btn-fullscreen');
 
 const LONG_PRESS_DURATION = 500;
 const DOUBLE_TAP_WINDOW = 300;
@@ -83,6 +84,11 @@ function sendClick(button) {
 function sendActionButton(button) {
     if (!isConnected) return;
     socket.emit('action_button', { button });
+}
+
+function sendCharToPC(char) {
+    if (!isConnected) return;
+    socket.emit('type_char', { char });
 }
 
 function sendTypedText() {
@@ -258,15 +264,46 @@ btnRight.addEventListener('click', () => sendClick('right'));
 btnL1.addEventListener('click', () => sendActionButton('L1'));
 btnL2.addEventListener('click', () => sendActionButton('L2'));
 
+// ==================== Pantalla completa ====================
+btnFullscreen.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.warn('Fullscreen no disponible:', err.message);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+});
+
 btnSendText.addEventListener('click', sendTypedText);
 btnClearText.addEventListener('click', () => {
     textInputEl.value = '';
     textInputEl.focus();
 });
+
+// ==================== NUEVO: Escritura en tiempo real ====================
+// Usar evento 'input' en lugar de 'keypress' (más confiable en móviles)
+textInputEl.addEventListener('input', (e) => {
+    const char = e.target.value;
+    if (!char) return;
+    
+    // Enviar cada carácter directo al PC
+    for (let c of char) {
+        sendCharToPC(c);
+    }
+    
+    // Limpiar el input
+    e.target.value = '';
+});
+
+// Capturar Backspace y Enter
 textInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Backspace') {
         e.preventDefault();
-        sendTypedText();
+        sendCharToPC('BackSpace');
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        sendCharToPC('Enter');
     }
 });
 
