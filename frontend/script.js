@@ -311,9 +311,18 @@ const niriConfirmYes = document.getElementById('niri-confirm-yes');
 const niriConfirmNo = document.getElementById('niri-confirm-no');
 let niriAvailable = false;
 
+const niriTabs = document.querySelectorAll('.niri-tab');
+const niriPanes = document.querySelectorAll('.niri-pane');
+
+function activateNiriTab(name) {
+    niriTabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+    niriPanes.forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
+    if (name === 'escritorios') loadNiriWorkspaces();
+}
+
 function openNiriPanel() {
     if (!niriAvailable) return;
-    loadNiriWorkspaces();
+    activateNiriTab('ventana');
     niriOverlay.hidden = false;
 }
 
@@ -362,18 +371,23 @@ niriConfirmYes.addEventListener('click', () => {
 });
 niriConfirmNo.addEventListener('click', () => { niriConfirm.hidden = true; });
 
-// Clics en los botones del panel (excluye el cuadro de confirmación)
-document.querySelectorAll('#niri-overlay .niri-body .niri-action').forEach((btn) => {
-    btn.addEventListener('click', () => {
-        const action = btn.dataset.action;
-        if (action === 'quit') {
-            niriConfirm.hidden = false;
-            return;
-        }
-        btn.classList.add('pressed');
-        setTimeout(() => btn.classList.remove('pressed'), 150);
-        sendNiriAction(action);
-    });
+// Pestañas: al tocar una, muestra solo su categoría
+niriTabs.forEach((tab) => {
+    tab.addEventListener('click', () => activateNiriTab(tab.dataset.tab));
+});
+
+// Clics en los botones del panel (cuerpo + footer), excluyendo la confirmación
+niriOverlay.addEventListener('click', (e) => {
+    const btn = e.target.closest('.niri-action');
+    if (!btn || btn.id === 'niri-confirm-yes' || btn.id === 'niri-confirm-no') return;
+    const action = btn.dataset.action;
+    if (action === 'quit') {
+        niriConfirm.hidden = false;
+        return;
+    }
+    btn.classList.add('pressed');
+    setTimeout(() => btn.classList.remove('pressed'), 150);
+    sendNiriAction(action);
 });
 
 // El servidor nos indica si niri está disponible para mostrar/ocultar el botón

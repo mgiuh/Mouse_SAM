@@ -45,9 +45,14 @@
                 <h2>Acciones niri</h2>
                 <button id="niri-close" class="niri-close" aria-label="Cerrar">✕</button>
             </div>
+            <div class="niri-tabs" role="tablist">
+                <button class="niri-tab active" data-tab="ventana" role="tab">Ventana</button>
+                <button class="niri-tab" data-tab="columnas" role="tab">Columnas</button>
+                <button class="niri-tab" data-tab="monitores" role="tab">Monitores</button>
+                <button class="niri-tab" data-tab="escritorios" role="tab">Escritorios</button>
+            </div>
             <div class="niri-body">
-                <section class="niri-group">
-                    <h3>Ventana</h3>
+                <section class="niri-pane active" id="pane-ventana" role="tabpanel">
                     <div class="niri-grid">
                         <button class="niri-action" data-action="close-window">Cerrar ventana</button>
                         <button class="niri-action" data-action="fullscreen-window">Pantalla completa</button>
@@ -56,8 +61,7 @@
                         <button class="niri-action" data-action="focus-window-previous">Ventana previa</button>
                     </div>
                 </section>
-                <section class="niri-group">
-                    <h3>Columnas</h3>
+                <section class="niri-pane" id="pane-columnas" role="tabpanel">
                     <div class="niri-grid">
                         <button class="niri-action" data-action="focus-column-left">← Columna</button>
                         <button class="niri-action" data-action="focus-column-right">Columna →</button>
@@ -70,8 +74,7 @@
                         <button class="niri-action" data-action="expel-window-from-column">Sacar ventana</button>
                     </div>
                 </section>
-                <section class="niri-group">
-                    <h3>Monitores</h3>
+                <section class="niri-pane" id="pane-monitores" role="tabpanel">
                     <div class="niri-grid">
                         <button class="niri-action" data-action="focus-monitor-left">← Monitor</button>
                         <button class="niri-action" data-action="focus-monitor-right">Monitor →</button>
@@ -79,8 +82,7 @@
                         <button class="niri-action" data-action="focus-monitor-down">↓ Monitor</button>
                     </div>
                 </section>
-                <section class="niri-group">
-                    <h3>Escritorios</h3>
+                <section class="niri-pane" id="pane-escritorios" role="tabpanel">
                     <div class="niri-grid">
                         <button class="niri-action" data-action="focus-workspace-down">Escritorio ↓</button>
                         <button class="niri-action" data-action="focus-workspace-up">Escritorio ↑</button>
@@ -88,23 +90,12 @@
                     </div>
                     <div id="niri-workspaces" class="niri-chips"></div>
                 </section>
-                <section class="niri-group">
-                    <h3>Abrir</h3>
-                    <div class="niri-grid">
-                        <button class="niri-action niri-accent" data-action="open-terminal">Terminal (Kitty)</button>
-                    </div>
-                </section>
-                <section class="niri-group">
-                    <h3>Sistema</h3>
-                    <div class="niri-grid">
-                        <button class="niri-action" data-action="screenshot">Captura</button>
-                        <button class="niri-action" data-action="screenshot-screen">Captura pantalla</button>
-                        <button class="niri-action" data-action="screenshot-window">Captura ventana</button>
-                        <button class="niri-action" data-action="toggle-overview">Overview</button>
-                        <button class="niri-action" data-action="show-hotkey-overlay">Atajos</button>
-                        <button class="niri-action niri-danger" data-action="quit">Salir de la sesión</button>
-                    </div>
-                </section>
+            </div>
+            <div class="niri-footer">
+                <button class="niri-action niri-accent" data-action="open-terminal">Kitty</button>
+                <button class="niri-action" data-action="screenshot">Captura</button>
+                <button class="niri-action" data-action="toggle-overview">Overview</button>
+                <button class="niri-action niri-danger" data-action="quit">Salir</button>
             </div>
         </div>
 
