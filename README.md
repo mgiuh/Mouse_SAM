@@ -2,6 +2,28 @@
 
 Control el cursor de tu PC Linux desde un celular usando un touchpad virtual en el navegador web.
 
+## 📌 Estado actual (cambios de la sesión reciente)
+
+Esto es lo que se agregó/modificó y conviene saber antes de retomar:
+
+- **Panel de niri (compositor Wayland)**: el botón **▦** de la barra abre un panel con
+  **4 pestañas de categoría** (Ventana / Columnas / Monitores / Escritorios); al tocar una
+  solo muestra sus acciones. Debajo hay una **fila fija** siempre visible con Kitty, Captura,
+  Overview y Salir (este último pide confirmación). Altura fija de `50dvh`; el cuerpo scrollea
+  y el footer queda fijo.
+- **Rendimiento en móvil**: el lag del panel al desplazarse se corrigió **quitando
+  `backdrop-filter` de los botones y de la hoja del panel** (no era la cantidad de botones).
+- **Socket.IO** se sirve localmente desde `frontend/vendor/socket.io.min.js` (sin CDN externo).
+  El server manda headers anti-caché en HTML/CSS/JS.
+- **Backend niri**: lista cerrada de acciones permitidas (seguridad); `open-terminal` está fijo a
+  `kitty`. Los tests en `backend/test_niri.py` (71 en verde) cubren la lista cerrada y los
+  handlers con `subprocess.run` mockeado (incluido `quit`, sin ejecutar la sesión real).
+- **Gotcha de desarrollo**: `server.py` corre con `debug=False`, por lo que **Flask cachea la
+  plantilla `index.html`**. Tras editar el HTML hay que **reiniciar el server** para ver los
+  cambios; los CSS/JS estáticos sí se releen solos.
+- **Servidor**: escucha en `0.0.0.0:1024`. Para funciones que exigen contexto seguro (ej.
+  sensores del celular) haría falta HTTPS o `localhost` vía `adb reverse` — no implementado.
+
 ## 📋 Requisitos
 
 - **PC Principal (Servidor)**: Linux con sesión Wayland (probado en Arch Linux) y Python 3.9+
