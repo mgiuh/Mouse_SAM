@@ -2,21 +2,26 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0b1020">
     <title>SAMPC - Touchpad Remoto</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="app-shell">
         <div class="top-bar">
-            <p id="status" class="status disconnected">Conectando...</p>
-            <button id="btn-fullscreen" class="fullscreen-btn" title="Pantalla completa">⛶</button>
+            <p id="status" class="status disconnected">
+                <span class="status-dot"></span>
+                <span id="status-text">Conectando…</span>
+            </p>
+            <button id="btn-niri" class="niri-btn" title="Acciones niri" aria-label="Acciones niri" hidden>▦</button>
+            <button id="btn-fullscreen" class="fullscreen-btn" title="Pantalla completa" aria-label="Pantalla completa">⛶</button>
         </div>
 
         <main class="remote-layout">
             <section class="actions-column" aria-label="Botones de acción">
-                <button id="btn-l2" class="action-btn">L2</button>
-                <button id="btn-l1" class="action-btn">L1</button>
+                <button id="btn-l2" class="action-btn" aria-label="Acción L2 (Esc)">L2</button>
+                <button id="btn-l1" class="action-btn" aria-label="Acción L1 (Enter)">L1</button>
             </section>
 
             <section class="touchpad-column">
@@ -27,21 +32,94 @@
         </main>
 
         <section class="bottom-controls" aria-label="Clicks y modo">
-            <button id="btn-left-click" class="control-btn">click izq</button>
-            <button id="btn-mode-toggle" class="control-btn mode-btn" title="Cambiar entre modo cursor y scroll">🖱️</button>
-            <button id="btn-right-click" class="control-btn">click der</button>
-        </section>
-
-        <section class="text-controls" aria-label="Escritura remota">
-            <input id="text-input" class="text-input" type="text" placeholder="cuadro de texto" maxlength="220" autocomplete="off">
-            <div class="text-actions">
-                <button id="btn-clear-text" class="text-btn">limpiar</button>
-                <button id="btn-send-text" class="text-btn text-btn-send">enviar</button>
-            </div>
+            <button id="btn-left-click" class="control-btn" aria-label="Click izquierdo">click izq</button>
+            <button id="btn-mode-toggle" class="control-btn mode-btn" title="Cambiar entre modo cursor y scroll" aria-label="Cambiar de modo">🖱️</button>
+            <button id="btn-right-click" class="control-btn" aria-label="Click derecho">click der</button>
         </section>
     </div>
 
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="script.js?v=4"></script>
+    <!-- Panel de acciones niri -->
+    <div id="niri-overlay" class="niri-overlay" hidden>
+        <div class="niri-sheet" role="dialog" aria-modal="true" aria-label="Acciones niri">
+            <div class="niri-sheet-head">
+                <h2>Acciones niri</h2>
+                <button id="niri-close" class="niri-close" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="niri-body">
+                <section class="niri-group">
+                    <h3>Ventana</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action" data-action="close-window">Cerrar ventana</button>
+                        <button class="niri-action" data-action="fullscreen-window">Pantalla completa</button>
+                        <button class="niri-action" data-action="center-window">Centrar</button>
+                        <button class="niri-action" data-action="toggle-window-floating">Flotante</button>
+                        <button class="niri-action" data-action="focus-window-previous">Ventana previa</button>
+                    </div>
+                </section>
+                <section class="niri-group">
+                    <h3>Columnas</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action" data-action="focus-column-left">← Columna</button>
+                        <button class="niri-action" data-action="focus-column-right">Columna →</button>
+                        <button class="niri-action" data-action="focus-column-first">1ª columna</button>
+                        <button class="niri-action" data-action="focus-column-last">Última columna</button>
+                        <button class="niri-action" data-action="move-column-left">Mover col. ←</button>
+                        <button class="niri-action" data-action="move-column-right">Mover col. →</button>
+                        <button class="niri-action" data-action="toggle-column-tabbed-display">Tabs</button>
+                        <button class="niri-action" data-action="consume-window-into-column">Meter ventana</button>
+                        <button class="niri-action" data-action="expel-window-from-column">Sacar ventana</button>
+                    </div>
+                </section>
+                <section class="niri-group">
+                    <h3>Monitores</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action" data-action="focus-monitor-left">← Monitor</button>
+                        <button class="niri-action" data-action="focus-monitor-right">Monitor →</button>
+                        <button class="niri-action" data-action="focus-monitor-up">↑ Monitor</button>
+                        <button class="niri-action" data-action="focus-monitor-down">↓ Monitor</button>
+                    </div>
+                </section>
+                <section class="niri-group">
+                    <h3>Escritorios</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action" data-action="focus-workspace-down">Escritorio ↓</button>
+                        <button class="niri-action" data-action="focus-workspace-up">Escritorio ↑</button>
+                        <button class="niri-action" data-action="focus-workspace-previous">Escritorio previo</button>
+                    </div>
+                    <div id="niri-workspaces" class="niri-chips"></div>
+                </section>
+                <section class="niri-group">
+                    <h3>Abrir</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action niri-accent" data-action="open-terminal">Terminal (Kitty)</button>
+                    </div>
+                </section>
+                <section class="niri-group">
+                    <h3>Sistema</h3>
+                    <div class="niri-grid">
+                        <button class="niri-action" data-action="screenshot">Captura</button>
+                        <button class="niri-action" data-action="screenshot-screen">Captura pantalla</button>
+                        <button class="niri-action" data-action="screenshot-window">Captura ventana</button>
+                        <button class="niri-action" data-action="toggle-overview">Overview</button>
+                        <button class="niri-action" data-action="show-hotkey-overlay">Atajos</button>
+                        <button class="niri-action niri-danger" data-action="quit">Salir de la sesión</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div id="niri-confirm" class="niri-confirm" hidden>
+            <div class="niri-confirm-box">
+                <p>¿Salir de la sesión de niri? Se perderán los cambios sin guardar.</p>
+                <div class="niri-confirm-actions">
+                    <button id="niri-confirm-no" class="niri-action">Cancelar</button>
+                    <button id="niri-confirm-yes" class="niri-action niri-danger">Sí, salir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="vendor/socket.io.min.js"></script>
+    <script src="script.js?v=6"></script>
 </body>
 </html>

@@ -1,12 +1,25 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import subprocess
 import threading
 import queue
 import os
+import json
+import glob
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='', template_folder='../frontend')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+
+@app.after_request
+def prevent_static_caching(resp):
+    """En LAN el navegador no debe cachear HTML/CSS/JS (evita ver versiones viejas)."""
+    path = request.path
+    if path == '/' or path.endswith(('.html', '.css', '.js')):
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        resp.headers['Pragma'] = 'no-cache'
+        resp.headers['Expires'] = '0'
+    return resp
 
 
 def resolve_ydotool_socket():
@@ -47,6 +60,150 @@ def check_ydotoold():
 
 
 check_ydotoold()
+
+
+# ---------------------------------------------------------------------------
+# Integración con niri (compositor Wayland)
+# ---------------------------------------------------------------------------
+def niri_env():
+    """Devuelve un entorno con NIRI_SOCKET resuelto para los subprocess.
+
+    niri usa la variable NIRI_SOCKET. Si no está en el entorno (p.ej. el
+    server corre desde systemd), la buscamos por glob en /run/user/<uid>.
+    """
+    env = dict(os.environ)
+    sock = env.get('NIRI_SOCKET')
+    if not sock:
+        matches = sorted(glob.glob(f'/run/user/{os.getuid()}/niri.*.sock'))
+        if matches:
+            sock = matches[0]
+    if sock:
+        env['NIRI_SOCKET'] = sock
+    return env
+
+
+NIRI_ENV = niri_env()
+
+
+# Acciones simples permitidas (sin argumentos)
+NIRI_ALLOWED = {
+    'close-window', 'fullscreen-window', 'toggle-windowed-fullscreen',
+    'center-window', 'center-column', 'toggle-window-floating',
+    'focus-window-previous',
+    'focus-column-left', 'focus-column-right',
+    'focus-column-first', 'focus-column-last',
+    'move-column-left', 'move-column-right',
+    'consume-window-into-column', 'expel-window-from-column',
+    'toggle-column-tabbed-display',
+    'focus-monitor-left', 'focus-monitor-right',
+    'focus-monitor-up', 'focus-monitor-down',
+    'focus-workspace-down', 'focus-workspace-up', 'focus-workspace-previous',
+    'toggle-overview',
+    'screenshot', 'screenshot-screen', 'screenshot-window',
+    'show-hotkey-overlay',
+}
+
+# Acciones que reciben un número (índice); se valida el rango
+NIRI_PARAM = {
+    'focus-workspace': (1, 40),
+    'move-window-to-workspace': (1, 40),
+    'focus-column': (0, 100),
+    'move-column-to-index': (0, 100),
+}
+
+# Acciones especiales mapeadas a un comando fijo (el cliente nunca envía el comando)
+NIRI_SPECIAL = {
+    'open-terminal': ['action', 'spawn', '--', 'kitty'],
+    'quit': ['action', 'quit'],
+}
+
+
+def niri_command_parts(action, param=None):
+    """Devuelve la lista argv para 'niri msg' o None si no está permitida."""
+    if action in NIRI_SPECIAL:
+        return NIRI_SPECIAL[action]
+    if action in NIRI_ALLOWED:
+        return ['action', action]
+    if action in NIRI_PARAM and param is not None:
+        try:
+            idx = int(param)
+        except (TypeError, ValueError):
+            return None
+        lo, hi = NIRI_PARAM[action]
+        if lo <= idx <= hi:
+            return ['action', action, str(idx)]
+    return None
+
+
+def niri_available():
+    if not NIRI_ENV.get('NIRI_SOCKET'):
+        return False
+    try:
+        res = subprocess.run(['niri', 'msg', 'version'], env=NIRI_ENV,
+                             capture_output=True, text=True, timeout=1)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
+@socketio.on('niri_status')
+def handle_niri_status():
+    """El frontend consulta esto al conectar para mostrar/ocultar el botón."""
+    return {'available': niri_available()}
+
+
+@socketio.on('niri_action')
+def handle_niri_action(data):
+    """Ejecuta una acción de niri SOLO si está en la lista permitida."""
+    try:
+        action = str(data.get('action', ''))
+        param = data.get('param')
+    except Exception:
+        emit('niri_result', {'ok': False, 'error': 'petición inválida'})
+        return
+
+    parts = niri_command_parts(action, param)
+    if not parts:
+        print(f'[NIRI] acción rechazada no permitida: {action}')
+        emit('niri_result', {'ok': False, 'error': 'acción no permitida'})
+        return
+
+    try:
+        res = subprocess.run(['niri', 'msg', *parts], env=NIRI_ENV,
+                             capture_output=True, text=True, timeout=2)
+        if res.returncode != 0:
+            err = (res.stderr or 'fallo').strip().splitlines()[-1][:200]
+            print(f'[NIRI] {action} -> código {res.returncode}: {err}')
+            emit('niri_result', {'ok': False, 'error': err})
+        else:
+            print(f'[NIRI] acción ejecutada: {action}')
+            emit('niri_result', {'ok': True})
+    except Exception as e:
+        print(f'[NIRI ERROR] {action}: {e}')
+        emit('niri_result', {'ok': False, 'error': str(e)[:200]})
+
+
+@socketio.on('niri_workspaces')
+def handle_niri_workspaces():
+    """Lee los escritorios virtuales de niri para pintar los chips."""
+    try:
+        res = subprocess.run(['niri', 'msg', '-j', 'workspaces'], env=NIRI_ENV,
+                             capture_output=True, text=True, timeout=2)
+        if res.returncode != 0:
+            return {'ok': False}
+        data = json.loads(res.stdout)
+        workspaces = [{
+            'id': w.get('id'),
+            'idx': w.get('idx'),
+            'name': w.get('name'),
+            'active': w.get('is_active'),
+            'focused': w.get('is_focused'),
+            'output': w.get('output'),
+        } for w in data]
+        return {'ok': True, 'workspaces': workspaces}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}
+
 
 # Queue y worker desacoplado para movimiento suave sin bloquear Socket.IO
 move_queue = queue.Queue(maxsize=100)

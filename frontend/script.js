@@ -8,10 +8,9 @@ const btnLeft = document.getElementById('btn-left-click');
 const btnRight = document.getElementById('btn-right-click');
 const btnL1 = document.getElementById('btn-l1');
 const btnL2 = document.getElementById('btn-l2');
-const textInputEl = document.getElementById('text-input');
-const btnSendText = document.getElementById('btn-send-text');
-const btnClearText = document.getElementById('btn-clear-text');
 const btnFullscreen = document.getElementById('btn-fullscreen');
+const statusTextEl = document.getElementById('status-text');
+const appShell = document.querySelector('.app-shell');
 
 const LONG_PRESS_DURATION = 500;
 const DOUBLE_TAP_WINDOW = 300;
@@ -39,16 +38,18 @@ let accumulatedScrollY = 0;
 // ==================== Conexión ====================
 socket.on('connect', () => {
     isConnected = true;
-    statusEl.textContent = 'Conectado ✓';
+    statusTextEl.textContent = 'Conectado ✓';
     statusEl.classList.remove('disconnected');
     statusEl.classList.add('connected');
+    appShell.classList.remove('is-disconnected');
 });
 
 socket.on('disconnect', () => {
     isConnected = false;
-    statusEl.textContent = 'Desconectado ✗';
+    statusTextEl.textContent = 'Desconectado ✗';
     statusEl.classList.remove('connected');
     statusEl.classList.add('disconnected');
+    appShell.classList.add('is-disconnected');
 });
 
 socket.on('response', (data) => {
@@ -57,6 +58,7 @@ socket.on('response', (data) => {
 
 // ==================== Helpers ====================
 function updateModeUI() {
+    document.body.dataset.mode = mode;
     if (mode === 'cursor') {
         modeIndicatorEl.textContent = 'CURSOR';
         btnMode.textContent = '🖱️';
@@ -78,25 +80,33 @@ function getPointFromEvent(e) {
 
 function sendClick(button) {
     if (!isConnected) return;
+    vibrate(12);
     socket.emit('click', { button });
 }
 
 function sendActionButton(button) {
     if (!isConnected) return;
+    vibrate(12);
     socket.emit('action_button', { button });
 }
 
-function sendCharToPC(char) {
-    if (!isConnected) return;
-    socket.emit('type_char', { char });
+function vibrate(ms) {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(ms); } catch (_) { /* noop */ }
+    }
 }
 
-function sendTypedText() {
-    if (!isConnected) return;
-    const text = textInputEl.value.trim();
-    if (!text) return;
-    socket.emit('type_text', { text });
-    textInputEl.value = '';
+function spawnRipple(clientX, clientY) {
+    if (typeof clientX !== 'number') return;
+    const rect = touchpad.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height) * 0.45;
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = (clientX - rect.left - size / 2) + 'px';
+    ripple.style.top = (clientY - rect.top - size / 2) + 'px';
+    touchpad.appendChild(ripple);
+    ripple.addEventListener('animationend', () => ripple.remove());
 }
 
 // ==================== Touchpad events ====================
@@ -107,6 +117,12 @@ function handleTouchStart(e) {
     isTouching = true;
     hasMoved = false;
     touchStartTime = Date.now();
+
+    const src = e.touches ? e.touches[0] : e;
+    if (src && typeof src.clientX === 'number') {
+        spawnRipple(src.clientX, src.clientY);
+        vibrate(8);
+    }
 
     const point = getPointFromEvent(e);
     lastX = point.x;
@@ -285,37 +301,88 @@ btnFullscreen.addEventListener('click', () => {
     }
 });
 
-btnSendText.addEventListener('click', sendTypedText);
-btnClearText.addEventListener('click', () => {
-    textInputEl.value = '';
-    textInputEl.focus();
+// ==================== Acciones niri ====================
+const btnNiri = document.getElementById('btn-niri');
+const niriOverlay = document.getElementById('niri-overlay');
+const niriClose = document.getElementById('niri-close');
+const niriWorkspaces = document.getElementById('niri-workspaces');
+const niriConfirm = document.getElementById('niri-confirm');
+const niriConfirmYes = document.getElementById('niri-confirm-yes');
+const niriConfirmNo = document.getElementById('niri-confirm-no');
+let niriAvailable = false;
+
+function openNiriPanel() {
+    if (!niriAvailable) return;
+    loadNiriWorkspaces();
+    niriOverlay.hidden = false;
+}
+
+function closeNiriPanel() {
+    niriOverlay.hidden = true;
+    niriConfirm.hidden = true;
+}
+
+function sendNiriAction(action, param) {
+    vibrate(15);
+    socket.emit('niri_action', Object.assign({ action }, param !== undefined ? { param } : {}));
+    socket.once('niri_result', (res) => {
+        if (res && !res.ok) console.warn('[NIRI] error:', res.error);
+    });
+}
+
+function renderNiriWorkspaces(list) {
+    niriWorkspaces.innerHTML = '';
+    list.forEach((w) => {
+        const chip = document.createElement('button');
+        chip.className = 'niri-chip' + (w.active ? ' active' : '');
+        chip.textContent = w.name || w.idx;
+        chip.addEventListener('click', () => sendNiriAction('focus-workspace', w.idx));
+        niriWorkspaces.appendChild(chip);
+    });
+}
+
+function loadNiriWorkspaces() {
+    socket.emit('niri_workspaces', (resp) => {
+        if (resp && resp.ok) renderNiriWorkspaces(resp.workspaces || []);
+    });
+}
+
+btnNiri.addEventListener('click', openNiriPanel);
+niriClose.addEventListener('click', closeNiriPanel);
+niriOverlay.addEventListener('click', (e) => {
+    if (e.target === niriOverlay) closeNiriPanel();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !niriOverlay.hidden) closeNiriPanel();
 });
 
-// ==================== NUEVO: Escritura en tiempo real ====================
-// Usar evento 'input' en lugar de 'keypress' (más confiable en móviles)
-textInputEl.addEventListener('input', (e) => {
-    const char = e.target.value;
-    if (!char) return;
-    
-    // Enviar cada carácter directo al PC
-    for (let c of char) {
-        sendCharToPC(c);
-    }
-    
-    // Limpiar el input
-    e.target.value = '';
+niriConfirmYes.addEventListener('click', () => {
+    niriConfirm.hidden = true;
+    sendNiriAction('quit');
+});
+niriConfirmNo.addEventListener('click', () => { niriConfirm.hidden = true; });
+
+// Clics en los botones del panel (excluye el cuadro de confirmación)
+document.querySelectorAll('#niri-overlay .niri-body .niri-action').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'quit') {
+            niriConfirm.hidden = false;
+            return;
+        }
+        btn.classList.add('pressed');
+        setTimeout(() => btn.classList.remove('pressed'), 150);
+        sendNiriAction(action);
+    });
 });
 
-// Capturar Backspace y Enter
-textInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Backspace') {
-        e.preventDefault();
-        sendCharToPC('BackSpace');
-    } else if (e.key === 'Enter') {
-        e.preventDefault();
-        sendCharToPC('Enter');
-    }
+// El servidor nos indica si niri está disponible para mostrar/ocultar el botón
+socket.on('connect', () => {
+    socket.emit('niri_status', (status) => {
+        niriAvailable = !!(status && status.available);
+        btnNiri.hidden = !niriAvailable;
+    });
 });
 
 updateModeUI();
-console.log('SAMPC UI cargada (rediseño Canva)');
+console.log('SAMPC UI cargada (rediseño Dark/Glass + panel niri)');
