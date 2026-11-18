@@ -3,45 +3,50 @@ from flask_socketio import SocketIO, emit
 import subprocess
 import threading
 import queue
-import time
 import os
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='', template_folder='../frontend')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Detectar y configurar socket de ydotool
-for socket_candidate in ['/run/user/1000/.ydotool_socket', '/tmp/.ydotool_socket']:
-    if os.path.exists(socket_candidate):
-        os.environ['YDOTOOL_SOCKET'] = socket_candidate
-        # Si existe en /tmp pero no en /run/user/1000, crear enlace simbólio para herramientas por defecto
-        user_socket = f'/run/user/{os.getuid()}/.ydotool_socket'
-        if socket_candidate == '/tmp/.ydotool_socket' and not os.path.exists(user_socket):
-            try:
-                os.symlink('/tmp/.ydotool_socket', user_socket)
-            except Exception:
-                pass
-        break
 
-# Iniciar ydotoold como daemon si no está corriendo
-def ensure_ydotoold():
-    """Verifica si ydotoold ya está activo; si no, intenta iniciarlo."""
-    try:
-        check = subprocess.run(['pgrep', '-x', 'ydotoold'], capture_output=True, text=True)
-        if check.returncode == 0:
-            print('[ℹ️ YDOTOOLD] Daemon ydotoold ya se encuentra en ejecución')
-            return
-    except Exception as e:
-        print(f'[WARN] No se pudo comprobar pgrep: {e}')
+def resolve_ydotool_socket():
+    """Devuelve el socket de ydotoold a usar.
 
-    try:
-        # Intentar iniciar ydotoold en modo usuario si tiene permisos, o advertir
-        subprocess.Popen(['ydotoold'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.5)
-        print('[✅ YDOTOOLD] Daemon iniciado')
-    except Exception as e:
-        print(f'[❌ ERROR] No se pudo iniciar ydotoold automáticamente: {e}')
+    Respeta YDOTOOL_SOCKET si ya viene definido por start.sh y, si no,
+    detecta las ubicaciones habituales de ydotoold.
+    """
+    env_socket = os.environ.get('YDOTOOL_SOCKET')
+    if env_socket:
+        return env_socket
 
-ensure_ydotoold()
+    uid = os.getuid()
+    runtime_dir = os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{uid}'
+    candidates = [
+        os.path.join(runtime_dir, '.ydotool_socket'),
+        f'/run/user/{uid}/.ydotool_socket',
+        '/tmp/.ydotool_socket',
+    ]
+
+    for socket_candidate in candidates:
+        if os.path.exists(socket_candidate):
+            os.environ['YDOTOOL_SOCKET'] = socket_candidate
+            return socket_candidate
+    return None
+
+
+YDOTOOL_SOCKET = resolve_ydotool_socket()
+
+
+def check_ydotoold():
+    """Solo informa el estado: el daemon lo gestiona start.sh / systemd."""
+    if YDOTOOL_SOCKET and os.path.exists(YDOTOOL_SOCKET):
+        print(f'[ℹ️ YDOTOOLD] Socket detectado en {YDOTOOL_SOCKET}')
+    else:
+        print('[⚠️ YDOTOOLD] No se detectó socket de ydotoold.')
+        print('[⚠️ YDOTOOLD] Ejecutá ./start.sh para instalarlo y configurarlo.')
+
+
+check_ydotoold()
 
 # Queue y worker desacoplado para movimiento suave sin bloquear Socket.IO
 move_queue = queue.Queue(maxsize=100)
