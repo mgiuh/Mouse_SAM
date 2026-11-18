@@ -73,20 +73,65 @@ python3 server.py
 - **Click Derecho**: Simula un click derecho (menú contextual)
 - **Scroll Arriba/Abajo**: Desplaza verticalmente
 
+## 🪟 Panel de acciones niri (compositor niri)
+
+Si tu PC usa el compositor **niri** (Wayland), la barra superior del celular
+muestra un botón **▦** que abre un panel deslizante con acciones del
+escritorio. El botón solo aparece si se detecta niri al conectar
+(`NIRI_SOCKET` o buscándolo en `/run/user/<uid>/niri.*.sock`).
+
+> ⚠️ El botón **"Salir de la sesión"** cierra niri de verdad (termina tu
+> sesión gráfica). Pide confirmación antes de ejecutarse; usalo con cuidado.
+
+### Secciones del panel
+- **Ventana**: cerrar, pantalla completa, centrar, flotante, ventana previa.
+- **Columnas**: mover el foco entre columnas, mover columnas, plegado en
+  pestañas, meter/sacar ventanas de una columna.
+- **Monitores**: cambiar el foco entre monitores (izq/der/arriba/abajo).
+- **Escritorios**: anterior/siguiente escritorio, + chips numerados que leen
+  tus escritorios reales (el activo se resalta en celeste). Tocar un chip
+  salta a ese escritorio.
+- **Abrir**: *Terminal (Kitty)* abre una terminal Kitty.
+- **Sistema**: captura de pantalla/ventana, overview, atajos y salir de la
+  sesión.
+
+### Seguridad
+El celular **no puede ejecutar comandos libres**. El servidor solo obedece
+una lista cerrada de identificadores (`backend/server.py`: `NIRI_ALLOWED`,
+`NIRI_PARAM`, `NIRI_SPECIAL`). Cualquier otra acción —incluido `spawn`
+genérico— se rechaza **antes** de ejecutar algo, y los parámetros de
+escritorio se validan contra un rango. Verificado por `backend/test_niri.py`.
+
+### Cambiar la app de "Terminal"
+La acción `open-terminal` está fijada a `kitty` en el servidor. Para usar otra
+app, editá la entrada en `NIRI_SPECIAL` de `backend/server.py`:
+
+```python
+NIRI_SPECIAL = {
+    'open-terminal': ['action', 'spawn', '--', 'kitty'],  # cambiá 'kitty' por tu app
+    'quit': ['action', 'quit'],
+}
+```
+
+Luego reiniciá el servidor.
+
 ## 🔧 Estructura del Proyecto
 
 ```
 SAMPC/
 ├── start.sh              # Instala dependencias, configura ydotool y arranca
 ├── backend/
-│   ├── server.py           # Servidor Flask + SocketIO (control vía ydotool)
+│   ├── server.py           # Servidor Flask + SocketIO (control vía ydotool + niri)
 │   ├── server_simple.py    # Versión legacy de referencia
 │   ├── test_events.py      # Tests de humo de los eventos Socket.IO
+│   ├── test_niri.py         # Tests de la integración con niri (lista cerrada + handlers)
 │   └── requirements.txt     # Dependencias de Python
 └── frontend/
     ├── index.html          # Página HTML
-    ├── styles.css          # Estilos
-    └── script.js           # Lógica del touchpad
+    ├── styles.css          # Estilos (Dark/Glass)
+    ├── script.js           # Lógica del touchpad + panel niri
+    └── vendor/
+        └── socket.io.min.js # Cliente Socket.IO servido localmente
 ```
 
 ## 📱 Encontrar la IP de tu PC
@@ -156,6 +201,7 @@ Puedes modificar fácilmente:
 ## 🚀 Próximas mejoras posibles
 
 - [x] Controlar teclado (escritura en tiempo real)
+- [x] Panel de acciones para el compositor niri (lista cerrada de acciones)
 - [ ] Capturar pantalla remota
 - [ ] Autenticación por PIN
 - [ ] Múltiples sesiones simultáneas
