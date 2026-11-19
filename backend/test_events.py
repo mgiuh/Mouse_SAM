@@ -5,10 +5,40 @@ Estos son tests básicos que verifican:
 - La conexión WebSocket se establece
 - Eventos se envían sin causar excepciones
 - El servidor no crashea
+
+Los handlers de server.py ejecutan `ydotool` de verdad (mueven el mouse y
+escriben en el teclado). Para que correr pytest no tenga efectos secundarios,
+el fixture `ydotool_mock` (autouse) reemplaza `server.subprocess.run` por un
+falso: el operador arma las mismas órdenes, pero el "control" está desenchufado
+del hardware real. Lo mismo aplica al worker de movimiento en segundo plano,
+que comparte ese mismo módulo `subprocess`.
 """
 
 import pytest
+import server
 from server import app, socketio
+
+
+@pytest.fixture(autouse=True)
+def ydotool_mock(monkeypatch):
+    """Desenchufa el control: ningún handler ni worker llega a ydotool.
+
+    Registra además las órdenes armadas en `run_calls` para que los tests
+    puedan verificar el comando construido sin ejecutarlo.
+    """
+    run_calls = []
+
+    class FakeResult:
+        returncode = 0
+        stdout = ''
+        stderr = ''
+
+    def fake_run(cmd, *args, **kwargs):
+        run_calls.append(list(cmd))
+        return FakeResult()
+
+    monkeypatch.setattr(server.subprocess, 'run', fake_run)
+    return run_calls
 
 
 @pytest.fixture
