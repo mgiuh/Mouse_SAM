@@ -13,6 +13,11 @@ Esto es lo que se agregó/modificó y conviene saber antes de retomar:
   y el footer queda fijo.
 - **Rendimiento en móvil**: el lag del panel al desplazarse se corrigió **quitando
   `backdrop-filter` de los botones y de la hoja del panel** (no era la cantidad de botones).
+- **Firewall en `start.sh`**: detecta `ufw`/`firewalld` activos y ofrece abrir el
+  puerto 1024 (solo red local / cualquier red / omitir, default solo-LAN).
+  Idempotente: si ya hay regla para el puerto o no hay firewall, no pregunta.
+- **sudo diferido en `start.sh`**: ya no se pide al inicio; solo cuando un paso
+  privilegiado lo necesita (instalar ydotool, udev, grupo input, firewall).
 - **Socket.IO** se sirve localmente desde `frontend/vendor/socket.io.min.js` (sin CDN externo).
   El server manda headers anti-caché en HTML/CSS/JS.
 - **Backend niri**: lista cerrada de acciones permitidas (seguridad); `open-terminal` está fijo a
@@ -48,7 +53,12 @@ El script se encarga de:
 4. Configurar `ydotoold` como servicio de usuario de systemd.
    - Si tu usuario recién se agregó al grupo `input`, usa un daemon temporal
      como root y te avisa que cierres sesión para el modo permanente.
-5. Verificar que `ydotool` responda antes de arrancar el servidor.
+5. Detectar `ufw`/`firewalld` activos y ofrecer abrir el puerto 1024 con tres
+   opciones: **solo red local** (recomendado, restringe a tus subnets
+   privados), **cualquier red**, u **omitir**. Si no hay firewall activo o el
+   puerto ya tiene reglas, no pregunta nada. Sin terminal interactiva no
+   modifica reglas (solo avisa).
+6. Verificar que `ydotool` responda antes de arrancar el servidor.
 
 Deberías ver algo como:
 ```
@@ -177,6 +187,9 @@ Busca algo como `192.168.x.x` o `10.0.x.x`
 ### "Conexión rechazada"
 - Asegúrate de que el servidor esté corriendo
 - Verifica que ambos dispositivos estén en la misma red
+- Si tenés `ufw` o `firewalld` activo, puede estar bloqueando el puerto 1024:
+  `./start.sh` lo detecta y ofrece abrirlo, o manualmente:
+  `sudo ufw allow 1024/tcp` / `sudo firewall-cmd --permanent --add-port=1024/tcp && sudo firewall-cmd --reload`
 - Intenta con la IP en lugar de `localhost`
 
 ### El cursor no se mueve
