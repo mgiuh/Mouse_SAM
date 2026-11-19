@@ -7,7 +7,9 @@
 #   2. Instalar ydotool si no está presente.
 #   3. Preparar /dev/uinput (udev + grupo input).
 #   4. Configurar ydotoold (servicio de usuario systemd o daemon root temporal).
-#   5. Verificar que ydotool responda y arrancar el servidor.
+#   5. Verificar que ydotool responda.
+#   6. Abrir el puerto del servidor en el firewall (ufw/firewalld) si hay uno activo.
+#   7. Arrancar el servidor.
 
 set -u
 
@@ -38,7 +40,7 @@ ensure_sudo() {
         return 0
     fi
     if ! command -v sudo >/dev/null 2>&1; then
-        die "Se necesita 'sudo' para esta acción (instalar ydotool / configurar /dev/uinput)."
+        die "Se necesita 'sudo' para esta acción (instalar ydotool, configurar /dev/uinput o el firewall)."
     fi
     say "🔐 Solicitando permisos de administrador..."
     sudo -v || die "No se pudieron obtener permisos de sudo."
@@ -318,6 +320,183 @@ cleanup() {
 }
 
 # ---------------------------------------------------------------------------
+# 6. Firewall: abrir el puerto del servidor si hay ufw/firewalld activo
+# ---------------------------------------------------------------------------
+FIREWALL_PORT=1024
+
+# ¿ufw activo? 'ufw status' sin root puede fallar en algunas distros
+# (Arch); en ese caso se consulta el archivo de configuración.
+ufw_active() {
+    command -v ufw >/dev/null 2>&1 || return 1
+    local first
+    first="$(ufw status 2>/dev/null | head -n 1)"
+    case "$first" in
+        "Status: active")  return 0 ;;
+        "Status: inactive") return 1 ;;
+    esac
+    grep -qx 'ENABLED=yes' /etc/ufw/ufw.conf 2>/dev/null
+}
+
+firewalld_active() {
+    command -v firewall-cmd >/dev/null 2>&1 && \
+        [ "$(firewall-cmd --state 2>/dev/null)" = "running" ]
+}
+
+# ¿Hay ya una regla ALLOW IN para el puerto? Con SUDO vacío (pre-menú) puede
+# no listar nada si 'ufw status' exige root; tras ensure_sudo es fiable.
+ufw_port_listed() {
+    "${SUDO[@]}" ufw status 2>/dev/null | \
+        grep -qE "^${FIREWALL_PORT}(/tcp)?([[:space:]]+on[[:space:]]+[^[:space:]]+)?[[:space:]]+ALLOW IN"
+}
+
+firewalld_port_listed() {
+    firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | grep -qx "${FIREWALL_PORT}/tcp" && return 0
+    firewall-cmd --list-rich-rules 2>/dev/null | grep -qE "port port=[\"']${FIREWALL_PORT}[\"']"
+}
+
+# Imprime una red/prefijo por línea por cada IPv4 privada (RFC 1918) de la PC,
+# excluyendo loopback y direcciones no privadas.
+lan_networks() {
+    ip -o -f inet addr show 2>/dev/null | awk '
+        {
+            split($4, a, "/")
+            ip_ = a[1]; pfx = a[2]
+            if (ip_ == "" || pfx == "" || $2 == "lo") next
+            split(ip_, o, ".")
+            priv = (o[1] == 10) \
+                || (o[1] == 192 && o[2] == 168) \
+                || (o[1] == 172 && o[2] >= 16 && o[2] <= 31)
+            if (!priv) next
+            num = o[1] * 16777216 + o[2] * 65536 + o[3] * 256 + o[4]
+            if (pfx > 0) { step = 2 ^ (32 - pfx); net = int(num / step) * step }
+            else         { net = 0 }
+            printf "%d.%d.%d.%d/%d\n",
+                int(net / 16777216), int(net % 16777216 / 65536),
+                int(net % 65536 / 256), net % 256, pfx
+        }' | sort -u
+}
+
+open_ufw() {
+    local mode="$1"; shift
+    # Chequeo defensivo ya con privilegios, para no duplicar reglas.
+    if ufw_port_listed; then
+        say "✅ ufw: el puerto ${FIREWALL_PORT}/tcp ya estaba abierto"
+        return 0
+    fi
+    local net
+    if [ "$mode" = "any" ]; then
+        say "   ufw: abriendo ${FIREWALL_PORT}/tcp a cualquier red..."
+        "${SUDO[@]}" ufw allow "${FIREWALL_PORT}/tcp" \
+            || warn "No se pudo abrir el puerto ${FIREWALL_PORT}/tcp con ufw"
+        return 0
+    fi
+    for net in "$@"; do
+        say "   ufw: permitiendo ${net} → ${FIREWALL_PORT}/tcp..."
+        "${SUDO[@]}" ufw allow from "$net" to any port "$FIREWALL_PORT" proto tcp \
+            || warn "No se pudo agregar la regla ufw para ${net}"
+    done
+}
+
+open_firewalld() {
+    local mode="$1"; shift
+    local changed=false net rule
+
+    if [ "$mode" = "any" ]; then
+        say "   firewalld: abriendo ${FIREWALL_PORT}/tcp a cualquier red..."
+        if "${SUDO[@]}" firewall-cmd --permanent --add-port="${FIREWALL_PORT}/tcp" 2>/dev/null; then
+            changed=true
+        else
+            warn "No se pudo abrir el puerto ${FIREWALL_PORT}/tcp con firewalld"
+        fi
+    else
+        for net in "$@"; do
+            rule="rule family=\"ipv4\" source address=\"${net}\" port port=\"${FIREWALL_PORT}\" protocol=\"tcp\" accept"
+            if "${SUDO[@]}" firewall-cmd --permanent --query-rich-rule="$rule" 2>/dev/null; then
+                say "   firewalld: la regla para ${net} ya existía"
+                continue
+            fi
+            say "   firewalld: permitiendo ${net} → ${FIREWALL_PORT}/tcp..."
+            if "${SUDO[@]}" firewall-cmd --permanent --add-rich-rule="$rule" 2>/dev/null; then
+                changed=true
+            else
+                warn "No se pudo agregar la regla de firewalld para ${net}"
+            fi
+        done
+    fi
+
+    if [ "$changed" = true ]; then
+        if "${SUDO[@]}" firewall-cmd --reload >/dev/null 2>&1; then
+            say "✅ firewalld: reglas aplicadas"
+        else
+            warn "Las reglas quedaron guardadas pero 'firewall-cmd --reload' falló."
+        fi
+    fi
+}
+
+setup_firewall() {
+    local has_ufw=false has_firewalld=false fw_names=""
+    if ufw_active; then has_ufw=true; fw_names="ufw"; fi
+    if firewalld_active; then
+        has_firewalld=true
+        if [ -n "$fw_names" ]; then fw_names="$fw_names + firewalld"; else fw_names="firewalld"; fi
+    fi
+
+    if [ "$has_ufw" = false ] && [ "$has_firewalld" = false ]; then
+        say "🔥 No se detectó ningún firewall activo; no hace falta abrir puertos"
+        return 0
+    fi
+
+    local need_open=false
+    if [ "$has_ufw" = true ] && ! ufw_port_listed; then need_open=true; fi
+    if [ "$has_firewalld" = true ] && ! firewalld_port_listed; then need_open=true; fi
+    if [ "$need_open" = false ]; then
+        say "✅ ${fw_names}: el puerto ${FIREWALL_PORT}/tcp ya tiene reglas"
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        warn "${fw_names} está activo y el puerto ${FIREWALL_PORT}/tcp no está abierto."
+        warn "Sin terminal interactiva no se modifican reglas; si el celular no conecta,"
+        warn "ejecutá start.sh de nuevo y elegí una opción, o abrilo a mano."
+        return 0
+    fi
+
+    say ""
+    say "🔥 Firewall activo: ${fw_names}. El servidor escucha en el puerto ${FIREWALL_PORT}/tcp."
+    say "   ¿Querés abrirlo para que pueda conectar el celular?"
+    say "     1) Solo red local (recomendado) → solo tus subnets privados"
+    say "     2) Cualquier red                → cualquier origen de la red puede conectar"
+    say "     3) No abrir                     → omitir (el celular no conectará por red)"
+    local choice="" mode
+    read -r -p "   Opción [1]: " choice || choice=3
+    case "${choice:-1}" in
+        1) mode="lan" ;;
+        2) mode="any" ;;
+        *) say "   OK, no se modifica el firewall."; return 0 ;;
+    esac
+
+    local nets=()
+    if [ "$mode" = "lan" ]; then
+        mapfile -t nets < <(lan_networks)
+        if [ "${#nets[@]}" -eq 0 ]; then
+            warn "No se detectaron subnets privados (10.x / 172.16-31.x / 192.168.x)."
+            warn "No se agregó ninguna regla. Si tu red no es privada, reejecutá"
+            warn "start.sh y elegí 'Cualquier red'."
+            return 0
+        fi
+        say "   Redes locales detectadas: ${nets[*]}"
+    fi
+
+    ensure_sudo
+    if [ "$has_ufw" = true ]; then
+        if [ "$mode" = "lan" ]; then open_ufw lan "${nets[@]}"; else open_ufw any; fi
+    fi
+    if [ "$has_firewalld" = true ]; then
+        if [ "$mode" = "lan" ]; then open_firewalld lan "${nets[@]}"; else open_firewalld any; fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 say "🖱️  SAMPC - Iniciando servidor de touchpad remoto..."
@@ -332,6 +511,8 @@ if ! configure_daemon; then
     show_diagnostics
     die "ydotoold no responde. Revisá el diagnóstico anterior."
 fi
+
+setup_firewall
 
 say ""
 say "🌐 IPs disponibles:"
