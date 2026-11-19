@@ -20,23 +20,31 @@ USER_NAME="$(id -un)"
 NEEDS_RELOGIN=false
 DAEMON_MODE=""
 
+# sudo se solicita de forma diferida (ver ensure_sudo): solo la primera vez
+# que un paso privilegiado realmente lo necesite, no al inicio.
 SUDO=()
-if [ "$USER_ID" -ne 0 ]; then
-    if ! command -v sudo >/dev/null 2>&1; then
-        echo "❌ Se necesita 'sudo' para instalar ydotool y configurar /dev/uinput." >&2
-        exit 1
-    fi
-    echo "🔐 Solicitando permisos de administrador..."
-    if ! sudo -v; then
-        echo "❌ No se pudieron obtener permisos de sudo." >&2
-        exit 1
-    fi
-    SUDO=(sudo)
-fi
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*" >&2; }
 die() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+# Solicita sudo solo cuando un paso privilegiado lo requiere, y una sola vez.
+SUDO_REQUESTED=false
+ensure_sudo() {
+    if [ "$USER_ID" -eq 0 ]; then
+        return 0
+    fi
+    if [ "$SUDO_REQUESTED" = true ]; then
+        return 0
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        die "Se necesita 'sudo' para esta acción (instalar ydotool / configurar /dev/uinput)."
+    fi
+    say "🔐 Solicitando permisos de administrador..."
+    sudo -v || die "No se pudieron obtener permisos de sudo."
+    SUDO_REQUESTED=true
+    SUDO=(sudo)
+}
 
 # ---------------------------------------------------------------------------
 # 1. Entorno virtual de Python
@@ -66,6 +74,7 @@ install_ydotool() {
         return 0
     fi
 
+    ensure_sudo
     say "📦 Instalando ydotool..."
 
     if command -v pacman >/dev/null 2>&1; then
@@ -104,12 +113,32 @@ install_ydotool() {
 # 3. Preparación de /dev/uinput y grupo input
 # ---------------------------------------------------------------------------
 setup_uinput() {
+    local rule_system="/usr/lib/udev/rules.d/80-uinput.rules"
+    local rule_local="/etc/udev/rules.d/80-uinput.rules"
+
+    # ¿Ya está todo configurado? (regla udev + permisos de /dev/uinput)
+    local already_ok=true
+    if [ ! -f "$rule_system" ] && [ ! -f "$rule_local" ]; then
+        already_ok=false
+    fi
+    if [ -e /dev/uinput ]; then
+        local uinput_group uinput_mode
+        uinput_group="$(stat -c '%G' /dev/uinput 2>/dev/null)"
+        uinput_mode="$(stat -c '%a' /dev/uinput 2>/dev/null)"
+        if [ "$uinput_group" != "input" ] || [ "$uinput_mode" != "660" ]; then
+            already_ok=false
+        fi
+    fi
+
+    if [ "$already_ok" = true ]; then
+        say "✅ /dev/uinput y la regla udev ya están configurados"
+        return 0
+    fi
+
+    ensure_sudo
     say "🔧 Preparando /dev/uinput..."
 
     "${SUDO[@]}" modprobe uinput 2>/dev/null || true
-
-    local rule_system="/usr/lib/udev/rules.d/80-uinput.rules"
-    local rule_local="/etc/udev/rules.d/80-uinput.rules"
 
     if [ ! -f "$rule_system" ] && [ ! -f "$rule_local" ]; then
         say "   Instalando regla udev para uinput..."
@@ -142,6 +171,14 @@ setup_input_group() {
     if [ "$USER_ID" -eq 0 ]; then
         return 0
     fi
+
+    # Si ya está activo en esta sesión, no hace falta tocar nada.
+    if id -nG | tr ' ' '\n' | grep -qx input; then
+        say "✅ Ya estás en el grupo 'input' en esta sesión"
+        return 0
+    fi
+
+    ensure_sudo
 
     if ! getent group input >/dev/null 2>&1; then
         say "   Creando grupo 'input'..."
@@ -189,6 +226,7 @@ link_temp_socket() {
 }
 
 start_root_fallback() {
+    ensure_sudo
     say "⚙️  Iniciando daemon ydotoold como root (modo temporal)..."
 
     "${SUDO[@]}" pkill -TERM -f 'ydotoold .*--socket-path=/tmp/.ydotool_socket' 2>/dev/null || true
