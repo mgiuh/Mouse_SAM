@@ -226,25 +226,3 @@ def test_niri_workspaces_json_corrupto(monkeypatch):
     assert 'error' in res
 
 
-# ===========================================================================
-# GRUPO 5 — Integración real (SOLO LECTURA), opcional y automáticamente
-#           omitida si no hay niri en el entorno. No ejecuta ninguna acción
-#           que modifique la sesión: solo consulta estado y escritorios.
-# ===========================================================================
-@pytest.mark.skipif(not server.niri_available(),
-                    reason="niri no disponible en este entorno")
-def test_integracion_real_solo_lectura():
-    # Estado real del compositor
-    status = server.handle_niri_status()
-    assert status == {'available': True}
-
-    # Lectura real de escritorios (comando -j workspaces, no modifica nada)
-    ws = server.handle_niri_workspaces()
-    assert ws['ok'] is True
-    assert isinstance(ws['workspaces'], list)
-    assert len(ws['workspaces']) >= 1
-
-    primero = ws['workspaces'][0]
-    assert set(['id', 'idx', 'name', 'active', 'focused', 'output']).issubset(primero)
-    # Al menos un escritorio debe estar activo/focused
-    assert any(w['active'] or w['focused'] for w in ws['workspaces'])

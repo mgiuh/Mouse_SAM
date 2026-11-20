@@ -6,6 +6,12 @@ Control el cursor de tu PC Linux desde un celular usando un touchpad virtual en 
 
 Esto es lo que se agregó/modificó y conviene saber antes de retomar:
 
+- **Teclado remoto (nuevo)**: el botón **⌨️** de la barra abre un panel con un
+  campo de texto y 8 teclas especiales. Cada pulsación se envía al PC **al
+  instante** como evento `type_char` (ydotool `type`/`key`), sin acumular texto.
+  En móvil se usa `beforeinput` (los teclados táctiles no emiten `keydown`
+  fiable), con envío carácter por carácter para swipe/autocorrección.
+  Ver [⌨️ Teclado remoto](#️-teclado-remoto).
 - **Panel de niri (compositor Wayland)**: el botón **▦** de la barra abre un panel con
   **4 pestañas de categoría** (Ventana / Columnas / Monitores / Escritorios); al tocar una
   solo muestra sus acciones. Debajo hay una **fila fija** siempre visible con Kitty, Captura,
@@ -23,6 +29,8 @@ Esto es lo que se agregó/modificó y conviene saber antes de retomar:
 - **Backend niri**: lista cerrada de acciones permitidas (seguridad); `open-terminal` está fijo a
   `kitty`. Los tests en `backend/test_niri.py` (71 en verde) cubren la lista cerrada y los
   handlers con `subprocess.run` mockeado (incluido `quit`, sin ejecutar la sesión real).
+- **Tests**: 96 en verde — `test_niri.py` (70) + `test_events.py` (26), ambos con
+  ydotool mockeado (correr pytest no mueve el mouse ni escribe).
 - **Gotcha de desarrollo**: `server.py` corre con `debug=False`, por lo que **Flask cachea la
   plantilla `index.html`**. Tras editar el HTML hay que **reiniciar el server** para ver los
   cambios; los CSS/JS estáticos sí se releen solos.
@@ -147,6 +155,36 @@ NIRI_SPECIAL = {
 
 Luego reiniciá el servidor.
 
+## ⌨️ Teclado remoto
+
+El botón **⌨️** de la barra superior abre un panel para escribir en el PC desde
+el celular. **Cada tecla se envía directamente al instante** — no hace falta
+presionar Enter ni esperar a que se forme una palabra:
+
+1. Tocá **⌨️**.
+2. Tocá el campo de texto (se abre el teclado del celular) y escribí.
+3. Cada carácter viaja como evento `type_char` y el campo se limpia solo, así
+   que podés seguir escribiendo sin acumular texto.
+
+También hay una fila de **teclas especiales** para cuando el teclado del celular
+no las expone: `⌫` Retroceso, `↵` Intro, `⇥` Tab, `⎋` Escape y las 4 flechas.
+Se envían igual que un carácter normal.
+
+> El campo funciona como **capturador puro**: usalo para escribir en cualquier
+> aplicación del PC (un editor, un terminal, el buscador, etc.). El texto no se
+> muestra en el celular; se escribe directamente en donde esté el foco del PC.
+
+> **Nota móvil:** en Android/Chrome el campo usa el evento `beforeinput`, porque
+> los teclados virtuales (Gboard, Samsung) no emiten `keydown` con `e.key`
+> confiable. Si escribís deslizando o con autocorrección, el texto se envía
+> carácter por carácter. Si tocás el ⌫ del teclado del celular, se envía
+> `BackSpace`. Tras editar el HTML/JS, recargá la página en el celular.
+
+El backend (`backend/server.py`, `handle_type_char`) usa `ydotool type -- <char>`
+para caracteres y `ydotool key <code>:1 <code>:0` para especiales (BackSpace 14,
+Return 28, Tab 15, Escape 1, flechas 105/106/103/108). Cubierto por los tests en
+`backend/test_events.py`.
+
 ## 🔧 Estructura del Proyecto
 
 ```
@@ -155,13 +193,13 @@ SAMPC/
 ├── backend/
 │   ├── server.py           # Servidor Flask + SocketIO (control vía ydotool + niri)
 │   ├── server_simple.py    # Versión legacy de referencia
-│   ├── test_events.py      # Tests de humo de los eventos Socket.IO
+│   ├── test_events.py      # Tests de eventos Socket.IO (incl. type_char)
 │   ├── test_niri.py         # Tests de la integración con niri (lista cerrada + handlers)
 │   └── requirements.txt     # Dependencias de Python
 └── frontend/
-    ├── index.html          # Página HTML
+    ├── index.html          # Página HTML (panel niri + panel de teclado)
     ├── styles.css          # Estilos (Dark/Glass)
-    ├── script.js           # Lógica del touchpad + panel niri
+    ├── script.js           # Lógica del touchpad + panel niri + teclado remoto
     └── vendor/
         └── socket.io.min.js # Cliente Socket.IO servido localmente
 ```
@@ -236,6 +274,7 @@ Puedes modificar fácilmente:
 ## 🚀 Próximas mejoras posibles
 
 - [x] Controlar teclado (escritura en tiempo real)
+- [x] Panel de teclado remoto con teclas especiales (tecla por tecla)
 - [x] Panel de acciones para el compositor niri (lista cerrada de acciones)
 - [ ] Capturar pantalla remota
 - [ ] Autenticación por PIN

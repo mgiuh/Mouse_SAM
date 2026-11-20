@@ -347,6 +347,32 @@ def handle_type_text(data):
     except Exception as e:
         print(f'[ERROR TYPE_TEXT] {e}')
 
+# Keycodes evdev/Linux para teclas especiales (ydotool key <code>:1 <code>:0)
+TYPE_CHAR_KEYCODES = {
+    'BackSpace': 14,
+    'Return': 28,
+    'Enter': 28,
+    'Tab': 15,
+    'Escape': 1,
+    'ArrowLeft': 105,
+    'ArrowRight': 106,
+    'ArrowUp': 103,
+    'ArrowDown': 108,
+}
+
+
+def _send_keycode(code, name):
+    """Envía una tecla especial por su keycode y registra el resultado."""
+    result = subprocess.run(
+        ['ydotool', 'key', f'{code}:1', f'{code}:0'],
+        capture_output=True, timeout=1, text=True,
+    )
+    if result.returncode != 0:
+        print(f"[ERROR TYPE_CHAR {name}] code={result.returncode}: {result.stderr.strip()}")
+    else:
+        print(f"[TYPE_CHAR] {name} enviado")
+
+
 @socketio.on('type_char')
 def handle_type_char(data):
     """Escribe un carácter individual en tiempo real (cada tecla del teclado del teléfono)"""
@@ -354,25 +380,16 @@ def handle_type_char(data):
         char = str(data.get('char', ''))
         if not char:
             return
-        
-        # Manejo de teclas especiales
-        if char == 'BackSpace':
-            # Keycode 14 = BackSpace
-            result = subprocess.run(['ydotool', 'key', '14:1', '14:0'], capture_output=True, timeout=1, text=True)
-            if result.returncode != 0:
-                print(f"[ERROR TYPE_CHAR BackSpace] code={result.returncode}: {result.stderr.strip()}")
-            else:
-                print(f"[TYPE_CHAR] BackSpace enviado")
-        elif char == 'Return' or char == 'Enter':
-            # Keycode 28 = Return/Enter
-            result = subprocess.run(['ydotool', 'key', '28:1', '28:0'], capture_output=True, timeout=1, text=True)
-            if result.returncode != 0:
-                print(f"[ERROR TYPE_CHAR Enter] code={result.returncode}: {result.stderr.strip()}")
-            else:
-                print(f"[TYPE_CHAR] Enter enviado")
+
+        if char in TYPE_CHAR_KEYCODES:
+            _send_keycode(TYPE_CHAR_KEYCODES[char], char)
         else:
-            # Carácter normal
-            result = subprocess.run(['ydotool', 'type', '--', char], capture_output=True, timeout=1, text=True)
+            if len(char) > 8:
+                return
+            result = subprocess.run(
+                ['ydotool', 'type', '--', char],
+                capture_output=True, timeout=1, text=True,
+            )
             if result.returncode != 0:
                 print(f"[ERROR TYPE_CHAR] code={result.returncode}: {result.stderr.strip()}")
             else:

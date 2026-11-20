@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0b1020">
     <title>SAMPC - Touchpad Remoto</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
     <div class="app-shell">
@@ -15,6 +15,7 @@
                 <span id="status-text">Conectando…</span>
             </p>
             <button id="btn-niri" class="niri-btn" title="Acciones niri" aria-label="Acciones niri" hidden>▦</button>
+            <button id="btn-keyboard" class="keyboard-btn" title="Teclado remoto" aria-label="Teclado remoto">⌨️</button>
             <button id="btn-fullscreen" class="fullscreen-btn" title="Pantalla completa" aria-label="Pantalla completa">⛶</button>
         </div>
 
@@ -110,7 +111,32 @@
         </div>
     </div>
 
+    <!-- Panel de teclado remoto -->
+    <div id="keyboard-overlay" class="keyboard-overlay" hidden>
+        <div class="keyboard-sheet" role="dialog" aria-modal="true" aria-label="Teclado remoto">
+            <div class="keyboard-sheet-head">
+                <h2>Teclado remoto</h2>
+                <button id="keyboard-close" class="niri-close" aria-label="Cerrar">✕</button>
+            </div>
+            <p class="keyboard-hint">Cada tecla se envía al PC al instante.</p>
+            <input id="keyboard-input" class="keyboard-input" type="text"
+                   autocomplete="off" autocorrect="off" autocapitalize="off"
+                   spellcheck="false" inputmode="text" enterkeyhint="done"
+                   placeholder="Toca aquí para escribir…" aria-label="Campo de texto remoto">
+            <div class="keyboard-special-keys" aria-label="Teclas especiales">
+                <button class="keyboard-key" data-char="BackSpace" aria-label="Retroceso">⌫</button>
+                <button class="keyboard-key" data-char="Return" aria-label="Intro">↵</button>
+                <button class="keyboard-key" data-char="Tab" aria-label="Tabulador">⇥</button>
+                <button class="keyboard-key" data-char="Escape" aria-label="Escape">⎋</button>
+                <button class="keyboard-key" data-char="ArrowLeft" aria-label="Izquierda">←</button>
+                <button class="keyboard-key" data-char="ArrowRight" aria-label="Derecha">→</button>
+                <button class="keyboard-key" data-char="ArrowUp" aria-label="Arriba">↑</button>
+                <button class="keyboard-key" data-char="ArrowDown" aria-label="Abajo">↓</button>
+            </div>
+        </div>
+    </div>
+
     <script src="vendor/socket.io.min.js"></script>
-    <script src="script.js?v=6"></script>
+    <script src="script.js?v=8"></script>
 </body>
 </html>

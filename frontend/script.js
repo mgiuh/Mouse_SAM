@@ -398,5 +398,109 @@ socket.on('connect', () => {
     });
 });
 
+// ==================== Teclado remoto ====================
+const btnKeyboard = document.getElementById('btn-keyboard');
+const keyboardOverlay = document.getElementById('keyboard-overlay');
+const keyboardInput = document.getElementById('keyboard-input');
+const keyboardClose = document.getElementById('keyboard-close');
+const keyboardKeys = document.querySelectorAll('.keyboard-key');
+
+// Teclas del navegador -> nombres/keycodes que espera el backend
+const KEYBOARD_SPECIAL_MAP = {
+    Backspace: 'BackSpace',
+    Enter: 'Return',
+    Tab: 'Tab',
+    Escape: 'Escape',
+    ArrowLeft: 'ArrowLeft',
+    ArrowRight: 'ArrowRight',
+    ArrowUp: 'ArrowUp',
+    ArrowDown: 'ArrowDown',
+};
+
+function openKeyboardPanel() {
+    if (!isConnected) return;
+    keyboardOverlay.hidden = false;
+    keyboardInput.value = '';
+    keyboardInput.focus();
+}
+
+function closeKeyboardPanel() {
+    keyboardOverlay.hidden = true;
+    keyboardInput.value = '';
+    keyboardInput.blur();
+}
+
+function sendTypeChar(char) {
+    if (!isConnected || !char) return;
+    vibrate(8);
+    socket.emit('type_char', { char });
+}
+
+btnKeyboard.addEventListener('click', openKeyboardPanel);
+keyboardClose.addEventListener('click', closeKeyboardPanel);
+keyboardOverlay.addEventListener('click', (e) => {
+    if (e.target === keyboardOverlay) closeKeyboardPanel();
+});
+
+// ===== Captura del teclado virtual (Android/Chrome) =====
+// Los teclados táctiles NO emiten keydown fiable; beforeinput entrega el
+// texto realmente insertado (incluye swipe y autocorrección).
+let lastBeforeInputAt = 0;
+
+function sendChars(text) {
+    if (!isConnected || !text) return;
+    // Enviar carácter por carácter con un pequeño delay para no perder ninguno
+    // en ydotoold (especialmente cuando el teclado inserta una palabra entera).
+    [...text].forEach((ch, i) => {
+        setTimeout(() => sendTypeChar(ch), i * 12);
+    });
+}
+
+keyboardInput.addEventListener('beforeinput', (e) => {
+    e.preventDefault(); // el campo nunca acumula texto (capturador puro)
+    lastBeforeInputAt = Date.now();
+
+    if (e.inputType === 'deleteContentBackward' ||
+        e.inputType === 'deleteContentForward') {
+        sendTypeChar('BackSpace');
+    } else if (e.data) {
+        if (e.data === '\n') sendTypeChar('Return');
+        else sendChars(e.data);
+    }
+    keyboardInput.value = '';
+});
+
+// Fallback para PC: keydown sí es fiable con teclado físico.
+// Se ignora si beforeinput acaba de manejar la tecla (evita duplicados).
+keyboardInput.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (Date.now() - lastBeforeInputAt < 50) return; // ya lo cubrió beforeinput
+    e.preventDefault();
+
+    if (e.key === 'Escape') {
+        closeKeyboardPanel();
+        return;
+    }
+    if (e.key.length === 1) {
+        sendTypeChar(e.key);
+    } else if (KEYBOARD_SPECIAL_MAP[e.key]) {
+        sendTypeChar(KEYBOARD_SPECIAL_MAP[e.key]);
+    }
+    keyboardInput.value = '';
+});
+
+keyboardKeys.forEach((key) => {
+    key.addEventListener('click', () => {
+        sendTypeChar(key.dataset.char);
+        key.classList.add('pressed');
+        setTimeout(() => key.classList.remove('pressed'), 150);
+        keyboardInput.focus(); // seguir escribiendo sin reabrir el teclado del SO
+    });
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !keyboardOverlay.hidden) closeKeyboardPanel();
+});
+
 updateModeUI();
-console.log('SAMPC UI cargada (rediseño Dark/Glass + panel niri)');
+console.log('SAMPC UI cargada (rediseño Dark/Glass + panel niri + teclado)');

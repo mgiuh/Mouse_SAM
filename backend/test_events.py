@@ -175,3 +175,55 @@ class TestFrontendBackendEvents:
         """TEST 15: Enter en tiempo real"""
         socket_client.emit('type_char', {'char': 'Enter'})
         assert True
+
+
+class TestTypeCharComandos:
+    """Verifican el comando exacto armado para cada tecla (ydotool mockeado)."""
+
+    def test_caracter_normal_usan_ydotool_type(self, socket_client, ydotool_mock):
+        socket_client.emit('type_char', {'char': 'a'})
+        self._esperar(ydotool_mock, ['ydotool', 'type', '--', 'a'])
+        assert ['ydotool', 'type', '--', 'a'] in ydotool_mock
+
+    def test_backspace_usa_keycode_14(self, socket_client, ydotool_mock):
+        socket_client.emit('type_char', {'char': 'BackSpace'})
+        self._esperar(ydotool_mock, ['ydotool', 'key', '14:1', '14:0'])
+        assert ['ydotool', 'key', '14:1', '14:0'] in ydotool_mock
+
+    def test_return_usa_keycode_28(self, socket_client, ydotool_mock):
+        socket_client.emit('type_char', {'char': 'Return'})
+        self._esperar(ydotool_mock, ['ydotool', 'key', '28:1', '28:0'])
+        assert ['ydotool', 'key', '28:1', '28:0'] in ydotool_mock
+
+    @pytest.mark.parametrize('char,code', [
+        ('Tab', '15'),
+        ('Escape', '1'),
+        ('ArrowLeft', '105'),
+        ('ArrowRight', '106'),
+        ('ArrowUp', '103'),
+        ('ArrowDown', '108'),
+    ])
+    def test_teclas_especiales_usan_keycode(self, socket_client, ydotool_mock, char, code):
+        socket_client.emit('type_char', {'char': char})
+        esperado = ['ydotool', 'key', f'{code}:1', f'{code}:0']
+        self._esperar(ydotool_mock, esperado)
+        assert esperado in ydotool_mock
+
+    @staticmethod
+    def _esperar(calls, esperado, timeout=0.5):
+        import time
+        deadline = time.monotonic() + timeout
+        while esperado not in calls:
+            if time.monotonic() > deadline:
+                break
+            socketio.sleep(0.01)
+
+    def test_char_vacio_no_ejecuta_nada(self, socket_client, ydotool_mock):
+        socket_client.emit('type_char', {'char': ''})
+        socketio.sleep(0.05)
+        assert ydotool_mock == []
+
+    def test_char_demasiado_largo_no_ejecuta_nada(self, socket_client, ydotool_mock):
+        socket_client.emit('type_char', {'char': 'abcdefghi'})
+        socketio.sleep(0.05)
+        assert ydotool_mock == []
